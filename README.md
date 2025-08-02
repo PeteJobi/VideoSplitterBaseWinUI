@@ -56,5 +56,76 @@ Some things to note:
   Stops any ongoing processes. Right now, all it does is interrupt preview thumbnails generation.
 
 # Required Application Resources
-The library depends on Apllication Resources to allow for some customization of the drag/resize handles of sections, and the section itself.
+The library depends on Application Resources to allow for some customization of the drag/resize handles of sections, and the section itself.
+- **SectionLeftHandleAtRest**, **SectionLeftHandleHover** and **SectionLeftHandlePressed**: The colours for the left resize handles when they're not interacted with, hovered, or pressed respectively. They're all optional.
+- **SectionRightHandleAtRest**, **SectionRightHandleHover** and **SectionRightHandlePressed**: The colours for the right resize handles when they're not interacted with, hovered, or pressed respectively. They're all optional.
+- **SectionHandleAtRest**, **SectionHandleHover** and **SectionHandlePressed**: The colours for the drag handles when they're not interacted with, hovered, or pressed respectively. They're all optional. Note that if you do provide colours for the drag handles, the section template will need to have a transparent background for them to be seen.
+- **SectionTemplate**: This is the template used to form sections. The datatype of the template should be SplitRange, and you can bind to the Start, End and Duration properties of the Class. If you're using the generic version, the datatype will be the type T. <br>
+  Example:
+  ```
+  //The drag handle will be #44000000 when it's not being interacted with. This colour will also apply when it's being hovered, since SectionHandleHover isn't declared
+  <SolidColorBrush Color="#44000000" x:Key="SectionHandleAtRest"></SolidColorBrush>
+  
+  //The drag handle will be #66000000 when it's being pressed
+  <SolidColorBrush Color="#66000000" x:Key="SectionHandlePressed"></SolidColorBrush>
+  
+  //The left handle will be transparent when it's not being interacted with, since SectionLeftHandleAtRest isn't declared. It's going to be black when hovered and pressed
+  <SolidColorBrush Color="Black" x:Key="SectionLeftHandleHover"></SolidColorBrush>
+  
+  //The right handle will be transparent when it's not being interacted with, since SectionRightHandleAtRest isn't declared. It's going to be black when hovered and pressed
+  <SolidColorBrush Color="Black" x:Key="SectionRightHandleHover"></SolidColorBrush>
+  
+  //The range sections will be made up of a simple border with a stroke, containing a TextBlock that will reflect the duration of the range.
+  //The background is transparent so the drag handle colours will show through. The height is 70 so it matches the height of the preview thumbnails
+  <DataTemplate x:Key="SectionTemplate" x:DataType="videoSplitter:SplitRange">
+     <Border BorderBrush="AntiqueWhite" BorderThickness="3" Height="70" Background="Transparent">
+        <TextBlock HorizontalTextAlignment="Center" Text="{x:Bind Duration, Mode=OneWay}" Foreground="Yellow"/>
+     </Border>
+  </DataTemplate>
+  ```
 
+# Classes
+- **SplitViewModel<T>**: This is the view model you pass into the Splitter constructor when instantiating it.
+  ```
+  public class SplitViewModel<T>: INotifyPropertyChanged where T : SplitRange, new()
+  {
+      public ObservableCollection<T> SplitRanges { get; set; } = [];
+      public double TimelineScaleOf100 { get; set; }
+      public bool IsPlaying { get; set; }
+      public TimeSpan VideoProgress { get; set; }
+  }
+  ```
+  - **SplitRanges**: This is a collection of the ranges created. You can add to this collection to create new ranges (provided they are valid) or remove from the collection to delete. This collection is modified by the Splitter when you call any of the Split or Join functions.
+    ```
+    var viewModel = new SplitViewModel();
+    var splitter = new Splitter(viewModel, TimelineCanvas, VideoPlayer.MediaPlayer);
+
+    //Create a range that starts at 5 seconds and ends at 15. This also creates the section in the timeline
+    var newRange = new SplitRange{ Start = TimeSpan.Parse("00:00:05.000"), End = TimeSpan.Parse("00:00:15.000") };
+    viewModel.SplitRanges.Add(newRange);
+
+    //Deletes the range and its section
+    viewModel.SplitRanges.Remove(newRange);
+    ```
+  - **TimelineScaleOf100**: This represents a scale of the timeline from 1 to 100, 100 meaning the timeline spans seconds and 1 meaning the timeline spans hours. This property is also modified by the Splitter and the scale that it is initially set to depends on the duration of the video - the Splitter tries to fit the entire span of the video into the full width of the timeline.
+    When you change the scale from your end, it is reflected in the timeline. Best way to use this is to bind it to a slider with a maximum value of 100. The user can use this to zoom in and out of the timeline.
+    ```
+    var viewModel = new SplitViewModel();
+    var splitter = new Splitter(viewModel, TimelineCanvas, VideoPlayer.MediaPlayer);
+    
+    //In XAML
+    <Slider Value="{x:Bind viewModel.TimelineScaleOf100, Mode=TwoWay}" Maximum="100"/>
+    ```
+  - **IsPlaying**: This property reflects the current playback state of the video. If the video is playing, this value is true, otherwise it's false. You can use this property to show a pause or play icon. You can also use it to control playback: set it to true to play the video or set it to false to pause.
+    ```
+    private void PlayPause(object sender, RoutedEventArgs e)
+    {
+        viewModel.IsPlaying = !viewModel.IsPlaying;
+    }
+    
+    //In XAML
+    <Button Click="PlayPause">
+        <FontIcon Glyph="{x:Bind viewModel.IsPlaying, Mode=OneWay, Converter={StaticResource PlayPauseGlyphConverter}}"/>
+    </Button>
+    ```
+  - **VideoProgress**: This represents the current position of the video. The timeline itself acts as a video progress bar, but if you need a simpler progress bar that synchronizes with the timeline's current position, you can bind this property to a slider, using a Timespan-to-Double Converter.
