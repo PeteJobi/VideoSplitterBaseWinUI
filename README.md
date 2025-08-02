@@ -40,7 +40,7 @@ Some things to note:
     - Specify an _actionForEachSection_, if you want to perform operations on the elements that are created when a range is added to the model. Useful if you want to attach click handlers. This action receives the **FrameworkElement** and **SplitRange** representing the section. Read more about **SplitRange** class in the [Classes](#classes) section.
     - Splitter uses FFMPEG to generate preview thumbnails. If you want those, pass in the path in the _ffmpegPath_ parameter.
     - FFMPEG will need the path to the video to generate preview thumbnails. You'll have to specify _videoPath_ as well if you want those.
-  - **Splitter(SplitViewModel<T> model, Canvas canvas, MediaPlayer mediaPlayer, Action<FrameworkElement, T>? actionForEachSection = null, string? ffmpegPath = null, string? videoPath = null)** <br>
+  - **Splitter(SplitViewModel\<T> model, Canvas canvas, MediaPlayer mediaPlayer, Action<FrameworkElement, T>? actionForEachSection = null, string? ffmpegPath = null, string? videoPath = null)** <br>
     The generic version. _T_ must be a class that extends **SplitRange**. Read more about **SplitRange** class in the [Classes](#classes) section.
 - **SplitSection()** <br>
   If there are no existing ranges, callling this method creates 2 ranges split at the current position of the video. Otherwise, if the playhead is within a range, the range is split into two at the video's current positon, else a range is created starting from the end time of the closest range whose end is before the video's current position, and the video's current position itself.
