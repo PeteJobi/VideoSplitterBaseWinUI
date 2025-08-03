@@ -31,17 +31,18 @@ namespace VideoSplitter
 {
     public class Splitter<T> where T : SplitRange, new()
     {
-        private Canvas canvas;
-        private Canvas progressCanvas;
-        private StackPanel scenePreviewPanel;
-        private FrameworkElement seeker;
+        private readonly Canvas canvas;
+        private readonly Canvas progressCanvas;
+        private readonly StackPanel scenePreviewPanel;
+        private readonly FrameworkElement seeker;
         private TimeSpan duration;
-        private const double minimumScale = 5;
-        private const double linesOffset = 0.5;
-        private const double units = 5;
-        private const double incrementScaleBy = 0.5;
-        private const double scenePreviewPanelHeight = 70;
-        private double scale = minimumScale;
+        private const double MinimumScale = 5;
+        private const double LinesOffset = 0.5;
+        private const double Units = 5;
+        private const double IncrementScaleBy = 0.5;
+        private const double ScenePreviewPanelHeight = 70;
+        private const double SpaceForLines = 30;
+        private double scale = MinimumScale;
         private readonly int[] scaleIncrementCounts = [10, 15, 20];
         private readonly int[] labelIntervals = [4, 2, 1];
         private readonly TimeSpan[] spans =
@@ -70,38 +71,40 @@ namespace VideoSplitter
         //change to 2 and the scale now has to increment 20 times before the label interval changes to 1, after which scale has to be increment by 30 and then it repeats.
         private int currentSpanIndex;
         private int currentLabelPosIndex;
-        private DraggerResizer.DraggerResizer dragger;
-        private MediaPlayer mediaPlayer;
+        private readonly DraggerResizer.DraggerResizer dragger;
+        private readonly MediaPlayer mediaPlayer;
         private double prevTimelineScale;
         private TimeSpan prevVideoProgress;
-        private DispatcherQueue dispatcher;
-        private SplitViewModel<T> model;
-        private DataTemplate sectionTemplate;
-        private string videoPath;
+        private readonly DispatcherQueue dispatcher;
+        private readonly SplitViewModel<T> model;
+        private readonly DataTemplate sectionTemplate;
+        private readonly string? videoPath;
         private double previewImageWidth;
         private CancellationTokenSource previewsTokenSource;
-        private Process? ffmpegProcess;
+        private readonly Process? ffmpegProcess;
         private string? currentPreviewsFolder;
-        private static readonly Color Transparent = Color.FromArgb(0, 255, 255, 255);
-        private Action<FrameworkElement, T>? actionForEachSection;
-        private Dictionary<T, SplitRangeExtras> splitRangeExtras = new();
+        private readonly Color Transparent = Color.FromArgb(0, 255, 255, 255);
+        private readonly Action<FrameworkElement, T>? actionForEachSection;
+        private readonly Dictionary<T, SplitRangeExtras> splitRangeExtras = new();
+        private readonly HandlingParameters noBounds = new() { Boundary = Boundary.NoBounds };
 
-        public Splitter(SplitViewModel<T> model, Canvas canvas, MediaPlayer mediaPlayer, DispatcherQueue dispatcher, Action<FrameworkElement, T>? actionForEachSection = null, string? ffmpegPath = null, string? videoPath = null)
+        public Splitter(SplitViewModel<T> model, Canvas canvas, MediaPlayer mediaPlayer, Action<FrameworkElement, T>? actionForEachSection = null, string? ffmpegPath = null, string? videoPath = null)
         {
             dragger = new DraggerResizer.DraggerResizer();
             sectionTemplate = (DataTemplate)Application.Current.Resources["SectionTemplate"];
 
             this.canvas = canvas;
             this.mediaPlayer = mediaPlayer;
-            this.dispatcher = dispatcher;
             this.model = model;
             this.actionForEachSection = actionForEachSection;
+            dispatcher = canvas.DispatcherQueue;
             PlaybackSessionOnNaturalDurationChanged(mediaPlayer.PlaybackSession, null);
             mediaPlayer.PlaybackSession.NaturalDurationChanged += PlaybackSessionOnNaturalDurationChanged;
             mediaPlayer.PlaybackSession.NaturalVideoSizeChanged += PlaybackSessionOnNaturalVideoSizeChanged;
             mediaPlayer.PlaybackSession.PlaybackStateChanged += PlaybackSessionOnPlaybackStateChanged;
             mediaPlayer.PlaybackSession.PositionChanged += (s, e) =>
             {
+                if (s.Position == prevVideoProgress) return;
                 dispatcher.TryEnqueue(DispatcherQueuePriority.Normal, () =>
                 {
                     PositionSeeker(s.Position);
@@ -109,12 +112,11 @@ namespace VideoSplitter
                 });
             };
             model.PropertyChanged += ModelOnPropertyChanged;
-            if(model.SplitRanges == null) model.SplitRanges = new ObservableCollection<T>();
             model.SplitRanges.CollectionChanged += SplitRangesOnCollectionChanged;
 
             if (!string.IsNullOrWhiteSpace(ffmpegPath) && !string.IsNullOrWhiteSpace(videoPath))
             {
-                ffmpegProcess = new()
+                ffmpegProcess = new Process
                 {
                     StartInfo = new ProcessStartInfo
                     {
@@ -134,21 +136,97 @@ namespace VideoSplitter
             canvas.Children.Add(new Canvas());
             scenePreviewPanel = new StackPanel
             {
-                Height = scenePreviewPanelHeight, 
+                Height = ScenePreviewPanelHeight, 
                 Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
-                Background = new SolidColorBrush(Transparent)
             };
-            progressCanvas = new Canvas();
+            progressCanvas = new Canvas
+            {
+                Background = new SolidColorBrush(Transparent),
+                Height = canvas.ActualHeight
+            };
             progressCanvas.Children.Add(scenePreviewPanel);
             progressCanvas.Children.Add(seeker);
             progressCanvas.Tapped += ProgressCanvasOnTapped;
             canvas.Children.Add(progressCanvas);
+            Canvas.SetTop(scenePreviewPanel, SpaceForLines);
             seeker.UpdateLayout(); //This sets the ActualWidth of seeker
             dragger.InitDraggerResizer(seeker, [Orientation.Horizontal], 
-                new HandlingParameters{ DontChangeZIndex = true, Boundary = Boundary.BoundedAtCenter}, dragged: SeekerDragged);
+                new HandlingParameters{ DontChangeZIndex = true, Boundary = Boundary.BoundedAtCenter}, new HandlingCallbacks{ Dragging = SeekerDragged });
             dragger.SetElementZIndex(seeker, 100);
-            Canvas.SetTop(progressCanvas, 30);
         }
+
+        public void SplitSection()
+        {
+            var position = model.VideoProgress;
+            if (!model.SplitRanges.Any())
+            {
+                model.SplitRanges.Add(new T { Start = TimeSpan.Zero, End = position });
+                model.SplitRanges.Add(new T { Start = position, End = duration });
+                return;
+            }
+
+            var selectedRange = model.SplitRanges.FirstOrDefault(r => position > r.Start && position < r.End);
+            if(selectedRange != null)
+            {
+                model.SplitRanges.Add(new T { Start = position, End = selectedRange.End });
+                selectedRange.End = position;
+                return;
+            }
+
+            var nearestEndBeforeMark = TimeSpan.Zero;
+            foreach (var splitRange in model.SplitRanges)
+            {
+                if (splitRange.End < position && splitRange.End > nearestEndBeforeMark) nearestEndBeforeMark = splitRange.End;
+            }
+
+            model.SplitRanges.Add(new T { Start = nearestEndBeforeMark, End = position });
+        }
+
+        public void SplitIntervals(TimeSpan interval)
+        {
+            model.SplitRanges.Clear();
+            var start = TimeSpan.Zero;
+            var end = interval;
+            while (end < duration)
+            {
+                model.SplitRanges.Add(new T{ Start = start, End = end });
+                start = end;
+                end += interval;
+            }
+            model.SplitRanges.Add(new T { Start = start, End = duration });
+        }
+
+        public void JoinSections(params T[] ranges)
+        {
+            if (ranges.Length < 2) return;
+
+            var firstSelectedRange = ranges.First();
+            var lastSelectedRange = ranges.Last();
+            var rangesToRemove = ranges.Skip(1);
+            foreach (var r in rangesToRemove)
+            {
+                model.SplitRanges.Remove(r);
+            }
+
+            if (firstSelectedRange.End > lastSelectedRange.End) return;
+            firstSelectedRange.End = lastSelectedRange.End;
+        }
+
+        public async Task PlaySection(TimeSpan start, TimeSpan end, CancellationToken cancellationToken = default)
+        {
+            PositionSeekerAndPlayer(start);
+            mediaPlayer.Play();
+            await Task.Delay(end - start, cancellationToken);
+            mediaPlayer.Pause();
+        }
+
+        public void BringSectionHandleToTop(T range)
+        {
+            if (!splitRangeExtras.TryGetValue(range, out var extras)) return;
+            dragger.SetElementZIndexTopmost(extras.Section);
+        }
+
+        public Task Dispose() => previewsTokenSource.CancelAsync();
 
         private double GetInitialScale()
         {
@@ -157,9 +235,9 @@ namespace VideoSplitter
             var unitRanges = scaleIncrementCounts.Select(si =>
             {
                 var lastScaleInc = scaleIncrementCounts.Take(c).Sum();
-                var first = availableWidth / ((minimumScale + (incrementScaleBy * lastScaleInc)) *
-                                 labelIntervals[c] * units);
-                var last = availableWidth / ((minimumScale + (incrementScaleBy * (si + lastScaleInc))) * labelIntervals[c] * units);
+                var first = availableWidth / ((MinimumScale + (IncrementScaleBy * lastScaleInc)) *
+                                 labelIntervals[c] * Units);
+                var last = availableWidth / ((MinimumScale + (IncrementScaleBy * (si + lastScaleInc))) * labelIntervals[c] * Units);
                 c++;
                 return (first, last);
             }).ToArray();
@@ -200,7 +278,7 @@ namespace VideoSplitter
                 var result = -1;
                 for (var i = start; i <= end; i++)
                 {
-                    var unit = availableWidth / ((minimumScale + (incrementScaleBy * i)) * labelInt * units);
+                    var unit = availableWidth / ((MinimumScale + (IncrementScaleBy * i)) * labelInt * Units);
                     var total = unit * span;
                     if((total - duration).Duration() < spanDifference)
                     {
@@ -219,11 +297,10 @@ namespace VideoSplitter
             var currentLabelInt = labelIntervals[currentLabelPosIndex];
             var currentSpan = spans[currentSpanIndex];
             var numOfLabels = Math.Ceiling(duration / currentSpan);
-            var numOfLines = numOfLabels * currentLabelInt * units;
-            canvas.Width = numOfLines * scale + linesOffset + 40;
-            var singleSpanWidth = currentLabelInt * units * scale;
-            progressCanvas.Width = scenePreviewPanel.Width = duration / currentSpan * singleSpanWidth + linesOffset;
-            Debug.WriteLine(scenePreviewPanel.Width);
+            var numOfLines = numOfLabels * currentLabelInt * Units;
+            canvas.Width = numOfLines * scale + LinesOffset + 40;
+            var singleSpanWidth = currentLabelInt * Units * scale;
+            progressCanvas.Width = scenePreviewPanel.Width = duration / currentSpan * singleSpanWidth + LinesOffset;
             progressCanvas.UpdateLayout();
             foreach (var range in model.SplitRanges)
             {
@@ -234,9 +311,9 @@ namespace VideoSplitter
             {
                 var line = new Line
                 {
-                    X1 = Math.Round(i * scale) + linesOffset,
+                    X1 = Math.Round(i * scale) + LinesOffset,
                     Y1 = 0,
-                    Y2 = i % (units * currentLabelInt) == 0 ? 12 : i % units == 0 ? 7 : 4
+                    Y2 = i % (Units * currentLabelInt) == 0 ? 12 : i % Units == 0 ? 7 : 4
                 };
                 line.X2 = line.X1;
                 line.Stroke = (SolidColorBrush)Application.Current.Resources["TextFillColorPrimaryBrush"];
@@ -245,7 +322,7 @@ namespace VideoSplitter
 
             for (var i = 1; i <= numOfLabels; i++)
             {
-                var pos = i * scale * units * currentLabelInt;
+                var pos = i * scale * Units * currentLabelInt;
                 var textBlock = new TextBlock
                 {
                     Text = (i * currentSpan).ToString(),
@@ -292,7 +369,7 @@ namespace VideoSplitter
                 break;
             }
 
-            scale = minimumScale + (scaleIncrementCounts.Take(chosenIncrementIndex).Sum() + howManyIncrements) * incrementScaleBy;
+            scale = MinimumScale + (scaleIncrementCounts.Take(chosenIncrementIndex).Sum() + howManyIncrements) * IncrementScaleBy;
             currentLabelPosIndex = chosenIncrementIndex;
             currentSpanIndex = (chosenSegment * scaleIncrementCounts.Length) + chosenIncrementIndex;
             currentSpanIndex = Math.Min(currentSpanIndex, spans.Length - 1);
@@ -350,17 +427,9 @@ namespace VideoSplitter
 
         private void PlaybackSessionOnNaturalVideoSizeChanged(MediaPlaybackSession sender, object args)
         {
-            previewImageWidth = sender.NaturalVideoWidth / (double)sender.NaturalVideoHeight * scenePreviewPanelHeight;
+            previewImageWidth = sender.NaturalVideoWidth / (double)sender.NaturalVideoHeight * ScenePreviewPanelHeight;
             if (duration == TimeSpan.Zero) return;
             dispatcher.TryEnqueue(DispatcherQueuePriority.Normal, () => _ = SetUpPreviews());
-        }
-
-        public async Task PlaySection(TimeSpan start, TimeSpan end, CancellationToken cancellationToken = default)
-        {
-            PositionSeekerAndPlayer(start);
-            mediaPlayer.Play();
-            await Task.Delay(end - start, cancellationToken);
-            mediaPlayer.Pause();
         }
 
         private void ProgressCanvasOnTapped(object sender, TappedRoutedEventArgs e)
@@ -374,71 +443,6 @@ namespace VideoSplitter
         {
             var distance = dragger.GetElementLeft(seeker) + seeker.ActualWidth / 2;
             model.VideoProgress = prevVideoProgress = mediaPlayer.PlaybackSession.Position = distance / progressCanvas.Width * duration;
-        }
-
-        public void SplitSection()
-        {
-            var position = mediaPlayer.PlaybackSession.Position;
-            if (!model.SplitRanges.Any())
-            {
-                model.SplitRanges.Add(new T { Start = TimeSpan.Zero, End = position });
-                model.SplitRanges.Add(new T { Start = position, End = duration });
-                return;
-            }
-
-            var selectedRange = model.SplitRanges.FirstOrDefault(r => position > r.Start && position < r.End);
-            if(selectedRange != null)
-            {
-                model.SplitRanges.Add(new T { Start = position, End = selectedRange.End });
-                selectedRange.End = position;
-                return;
-            }
-
-            var nearestEndBeforeMark = TimeSpan.Zero;
-            foreach (var splitRange in model.SplitRanges)
-            {
-                if (splitRange.End < position && splitRange.End > nearestEndBeforeMark) nearestEndBeforeMark = splitRange.End;
-            }
-
-            model.SplitRanges.Add(new T { Start = nearestEndBeforeMark, End = position });
-        }
-
-        public void SplitIntervals(TimeSpan interval)
-        {
-            model.SplitRanges.Clear();
-            var start = TimeSpan.Zero;
-            var end = interval;
-            while (end < duration)
-            {
-                model.SplitRanges.Add(new T{ Start = start, End = end });
-                start = end;
-                end += interval;
-            }
-            model.SplitRanges.Add(new T { Start = start, End = duration });
-        }
-
-        public void JoinSections(params T[] ranges)
-        {
-            if (ranges.Length < 2) return;
-
-            var firstSelectedRange = ranges.First();
-            var lastSelectedRange = ranges.Last();
-            var rangesToRemove = ranges.Skip(1);
-            foreach (var r in rangesToRemove)
-            {
-                model.SplitRanges.Remove(r);
-            }
-
-            if (firstSelectedRange.End > lastSelectedRange.End) return;
-            firstSelectedRange.End = lastSelectedRange.End;
-        }
-
-        public Task Dispose() => previewsTokenSource.CancelAsync();
-
-        public void BringSectionHandleToTop(T range)
-        {
-            if (!splitRangeExtras.TryGetValue(range, out var extras)) return;
-            dragger.SetElementZIndexTopmost(extras.Section);
         }
 
         private void ValidateAndFixRangeSpan(T range)
@@ -502,7 +506,7 @@ namespace VideoSplitter
                             ValidateAndFixRangeSpan(item);
                             SortList(new List<T>{item}, model.SplitRanges.IndexOf(item));
                             var extras = splitRangeExtras[item];
-                            SetSectorWidthAndPosition(item.Start, item.End, extras.Section, false, true);
+                            SetSectorWidthAndPosition(item.Start, item.End, extras.Section, false);
                         };
                     }
                     Task.Run(async () =>
@@ -540,10 +544,9 @@ namespace VideoSplitter
         {
             var section = (FrameworkElement)sectionTemplate.LoadContent();
             progressCanvas.Children.Add(section);
+            Canvas.SetTop(section, SpaceForLines);
             SetSectorWidthAndPosition(range.Start, range.End, section, true);
             section.UpdateLayout();
-            //var range = new SplitRange { Start = start, End = end, InMultiSelectMode = model.InMultiSelectMode, CancellationTokenSource = new CancellationTokenSource() };
-            //range.InMultiSelectMode = model.InMultiSelectMode;
             section.DataContext = range;
             var orientations = new Dictionary<Orientation, Appearance>
             {
@@ -579,7 +582,7 @@ namespace VideoSplitter
             {
                 Section = section
             };
-            dragger.InitDraggerResizer(section, orientations, ended: UpdateContext);
+            dragger.InitDraggerResizer(section, orientations, callbacks: new HandlingCallbacks{ DragCompleted = UpdateContext, ResizeCompleted = _ => UpdateContext() });
             splitRangeExtras.Add(range, extras);
             actionForEachSection?.Invoke(section, range);
 
@@ -587,8 +590,6 @@ namespace VideoSplitter
             {
                 var left = dragger.GetElementLeft(extras.Section);
                 range.SetStartAndEndAtOnce(left / progressCanvas.Width * duration, (left + extras.Section.Width) / progressCanvas.Width * duration);
-                //Debug.WriteLine($"{range.Start}   {range.End}    {range.Duration}   {xx},{yy}");
-                //Debug.WriteLine($"{a}   {b}    {a == range.Start}   {b == range.End}");
             }
         }
 
@@ -611,12 +612,12 @@ namespace VideoSplitter
                 if (token.IsCancellationRequested) break;
                 currentTimePoint += previewInterval;
             }
-            Directory.Delete(previewsFolder, true);
+            await DeletePreviewFolder(previewsFolder, token);
         }
 
         private async Task SetPreviewImage(TimeSpan previewTimePoint, int index, string outputFolder, CancellationToken token)
         {
-            await StartProcess($"-ss {previewTimePoint} -i \"{videoPath}\"  -frames:v 1 -vf scale=w=-1:h={scenePreviewPanelHeight} \"{outputFolder}{index}.png\"", token);
+            await StartProcess($"-ss {previewTimePoint} -i \"{videoPath}\" -frames:v 1 -vf scale=w=-1:h={ScenePreviewPanelHeight} \"{outputFolder}{index}.png\"", token);
             if (token.IsCancellationRequested) return;
             var image = new Image();
             image.Name = index.ToString();
@@ -625,7 +626,20 @@ namespace VideoSplitter
             scenePreviewPanel.Children.Add(image);
         }
 
-        private void SetSectorWidthAndPosition(TimeSpan start, TimeSpan end, FrameworkElement section, bool isNew, bool bounded = false)
+        private static async Task DeletePreviewFolder(string previewFolder, CancellationToken token)
+        {
+            try
+            {
+                await Task.Delay(500, token);
+            }
+            catch(TaskCanceledException){}
+            finally
+            {
+                Directory.Delete(previewFolder, true);
+            }
+        }
+
+        private void SetSectorWidthAndPosition(TimeSpan start, TimeSpan end, FrameworkElement section, bool isNew)
         {
             var left = start / duration * progressCanvas.Width;
             var width = (end - start) / duration * progressCanvas.Width;
@@ -636,15 +650,14 @@ namespace VideoSplitter
             }
             else
             {
-                dragger.PositionElementLeft(section, left, new HandlingParameters{ Boundary = bounded ? Boundary.BoundedAtEdges : Boundary.NoBounds });
-                dragger.ResizeElementWidth(section, width, parameters: new HandlingParameters{ Boundary = bounded ? Boundary.BoundedAtEdges : Boundary.NoBounds });
+                dragger.PositionElementLeft(section, left, noBounds);
+                dragger.ResizeElementWidth(section, width, parameters: noBounds);
             }
         }
 
-        private object? TryGetResource(string resourceName) => !Application.Current.Resources.TryGetValue(resourceName, out var value) ? null : value;
+        private static object? TryGetResource(string resourceName) => !Application.Current.Resources.TryGetValue(resourceName, out var value) ? null : value;
 
-        private bool once;
-        async Task StartProcess(string arguments, CancellationToken token)
+        private async Task StartProcess(string arguments, CancellationToken token)
         {
             var finished = false;
             token.Register(() =>
@@ -673,16 +686,16 @@ namespace VideoSplitter
 
     public class Splitter: Splitter<SplitRange>
     {
-        public Splitter(SplitViewModel<SplitRange> model, Canvas canvas, MediaPlayer mediaPlayer, DispatcherQueue dispatcher, Action<FrameworkElement,
+        public Splitter(SplitViewModel model, Canvas canvas, MediaPlayer mediaPlayer, Action<FrameworkElement,
             SplitRange>? actionForEachSection = null, string? ffmpegPath = null, string? videoPath = null) 
-            : base(model, canvas, mediaPlayer, dispatcher, actionForEachSection, ffmpegPath, videoPath)
+            : base(model, canvas, mediaPlayer, actionForEachSection, ffmpegPath, videoPath)
         {
         }
     }
 
     public class SplitViewModel<T>: INotifyPropertyChanged where T : SplitRange, new()
     {
-        public ObservableCollection<T> SplitRanges { get; set; }
+        public ObservableCollection<T> SplitRanges { get; set; } = [];
         private double _timelinescaleof100;
         public double TimelineScaleOf100
         {
@@ -713,7 +726,7 @@ namespace VideoSplitter
         }
     }
 
-    public class SplitViewModel: SplitViewModel<SplitRange>{}
+    public class SplitViewModel: SplitViewModel<SplitRange>;
 
     public class SplitRange : INotifyPropertyChanged
     {
