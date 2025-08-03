@@ -129,3 +129,41 @@ The library depends on Application Resources to allow for some customization of 
     </Button>
     ```
   - **VideoProgress**: This represents the current position of the video. The timeline itself acts as a video progress bar, but if you need a simpler progress bar that synchronizes with the timeline's current position, you can bind this property to a slider, using a Timespan-to-Double Converter.
+- **SplitViewModel**: The non-generic version.
+  ```
+  public class SplitViewModel: SplitViewModel<SplitRange>;
+  ```
+- **SplitRange**: This class represents a range, defined by a Start and End time.
+  ```
+  public class SplitRange : INotifyPropertyChanged
+  {
+      public TimeSpan Start { get; set; }
+      public TimeSpan End { get; set; }
+      public string Duration { get; }
+      public void SetStartAndEndAtOnce(TimeSpan start, TimeSpan end);
+  }
+  ```
+  - **Start** and **End**: Self-explanatory. A range is only valid if the Start and End properties are not less than Timespan.Zero and not greater than the duration of the video and the Start is not greater than the End. If an invalid range is added, it will be corrected by the Splitter to be made valid.
+    ```
+    //Create a range that starts at 15 seconds and ends at 5. Obviously invalid
+    var newRange = new SplitRange{ Start = TimeSpan.Parse("00:00:15.000"), End = TimeSpan.Parse("00:00:05.000") };
+    viewModel.SplitRanges.Add(newRange);
+
+    //Start and End gets swapped by the Splitter
+    var start = newRange.Start; //start is 00:00:05.000
+    var end = newRange.End; //end is 00:00:15.000
+    ```
+  - **Duration**: This returns the difference between the Start and End of the range expressed in total seconds, minutes or hours with a single fixed point.
+    ```
+    //Continuing from the previous example
+    var duration = newRange.Duration; //duration is 10.0s
+    ```
+  - **void SetStartAndEndAtOnce(TimeSpan start, TimeSpan end)**: Setting either the Start or End properties will trigger a PropertyChanged event and set off some actions that acts on both properties. If you wanted to set both properties, these actions would be called twice, and the first time they're called, one of the properties (the second property to be set) will have an outdated value.
+    With this method, you can set both properties, and then trigger the PropertyChanged event for both properties AFTER they're both set.
+    ```
+    //Continuing from the previous example
+    newRange.Start = Timespan.FromSeconds(20); //When PropertyChanged event is called for Start, Start is 00:00:20 and End is 00:00:15. Invalid.
+    newRange.End = Timespan.FromSeconds(25); //When PropertyChanged event is called for End, Start is 00:00:20 and End is 00:00:25. As it should be
+
+    newRange.SetStartAndEndAtOnce(Timespan.FromSeconds(30), Timespan.FromSeconds(35)); //When PropertyChanged event is called for Start and End, Start is 00:00:30 and End is 00:00:35
+    ```
