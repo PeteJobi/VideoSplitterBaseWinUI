@@ -68,13 +68,14 @@ namespace VideoSplitter
             TimeSpan.FromSeconds(1),
         ];
         //e.g scale is incremented by 0.5 (incrementScaleBy) 10 (scaleIncrementCounts) times while the label intervals is 4 (labelIntervals) * 5 units. Then the label intervals
-        //change to 2 and the scale now has to increment 20 times before the label interval changes to 1, after which scale has to be increment by 30 and then it repeats.
+        //change to 2 and the scale now has to increment 20 times before the label interval changes to 1, after which scale has to be incremented by 30 and then it repeats.
         private int currentSpanIndex;
         private int currentLabelPosIndex;
         private readonly DraggerResizer.DraggerResizer dragger;
         private readonly MediaPlayer mediaPlayer;
         private double prevTimelineScale;
         private TimeSpan prevVideoProgress;
+        private bool prevIsPlaying;
         private readonly DispatcherQueue dispatcher;
         private readonly SplitViewModel<T> model;
         private readonly DataTemplate sectionTemplate;
@@ -102,15 +103,7 @@ namespace VideoSplitter
             mediaPlayer.PlaybackSession.NaturalDurationChanged += PlaybackSessionOnNaturalDurationChanged;
             mediaPlayer.PlaybackSession.NaturalVideoSizeChanged += PlaybackSessionOnNaturalVideoSizeChanged;
             mediaPlayer.PlaybackSession.PlaybackStateChanged += PlaybackSessionOnPlaybackStateChanged;
-            mediaPlayer.PlaybackSession.PositionChanged += (s, e) =>
-            {
-                if (s.Position == prevVideoProgress) return;
-                dispatcher.TryEnqueue(DispatcherQueuePriority.Normal, () =>
-                {
-                    PositionSeeker(s.Position);
-                    model.VideoProgress = prevVideoProgress = s.Position;
-                });
-            };
+            mediaPlayer.PlaybackSession.PositionChanged += PlaybackSessionOnPositionChanged;
             model.PropertyChanged += ModelOnPropertyChanged;
             model.SplitRanges.CollectionChanged += SplitRangesOnCollectionChanged;
 
@@ -215,9 +208,9 @@ namespace VideoSplitter
         public async Task PlaySection(TimeSpan start, TimeSpan end, CancellationToken cancellationToken = default)
         {
             PositionSeekerAndPlayer(start);
-            mediaPlayer.Play();
+            model.IsPlaying = true;
             await Task.Delay(end - start, cancellationToken);
-            mediaPlayer.Pause();
+            model.IsPlaying = false;
         }
 
         public void BringSectionHandleToTop(T range)
@@ -422,6 +415,8 @@ namespace VideoSplitter
 
         private async void PlaybackSessionOnPlaybackStateChanged(MediaPlaybackSession sender, object args)
         {
+            dispatcher.TryEnqueue(DispatcherQueuePriority.Normal,
+                () => model.IsPlaying = prevIsPlaying = sender.PlaybackState == MediaPlaybackState.Playing);
             if (sender.PlaybackState == MediaPlaybackState.Playing) await AnimateSeeker(sender);
         }
 
@@ -432,11 +427,21 @@ namespace VideoSplitter
             dispatcher.TryEnqueue(DispatcherQueuePriority.Normal, () => _ = SetUpPreviews());
         }
 
+        private void PlaybackSessionOnPositionChanged(MediaPlaybackSession sender, object args)
+        {
+            if (sender.Position == prevVideoProgress) return;
+            dispatcher.TryEnqueue(DispatcherQueuePriority.Normal, () =>
+            {
+                PositionSeeker(sender.Position);
+                model.VideoProgress = prevVideoProgress = sender.Position;
+            });
+        }
+
         private void ProgressCanvasOnTapped(object sender, TappedRoutedEventArgs e)
         {
             var distance = e.GetPosition(progressCanvas).X;
             PositionSeekerAndPlayer(distance);
-            model.VideoProgress = mediaPlayer.Position;
+            model.VideoProgress = prevVideoProgress = mediaPlayer.Position;
         }
 
         private void SeekerDragged()
@@ -466,7 +471,7 @@ namespace VideoSplitter
                     if (range == addition) continue;
                     if ((addition.Start < range.Start && index + i > j) || (addition.Start > range.Start && index + i < j))
                     {
-                        model.SplitRanges.Move(j, index + i);
+                        model.SplitRanges.Move(index + i, j);
                         break;
                     }
                 }
@@ -535,6 +540,20 @@ namespace VideoSplitter
                     {
                         prevVideoProgress = model.VideoProgress;
                         PositionSeekerAndPlayer(prevVideoProgress);
+                    }
+                    break;
+                case nameof(SplitViewModel<T>.IsPlaying):
+                    if (model.IsPlaying != prevIsPlaying)
+                    {
+                        prevIsPlaying = model.IsPlaying;
+                        if (model.IsPlaying)
+                        {
+                            mediaPlayer.Play();
+                        }
+                        else
+                        {
+                            mediaPlayer.Pause();
+                        }
                     }
                     break;
             }
@@ -707,6 +726,19 @@ namespace VideoSplitter
                 OnPropertyChanged();
             }
         }
+
+        private bool _isplaying;
+        public bool IsPlaying
+        {
+            get => _isplaying;
+            set
+            {
+                if (_isplaying == value) return;
+                _isplaying = value;
+                OnPropertyChanged();
+            }
+        }
+
         private TimeSpan _videoprogress;
         public TimeSpan VideoProgress
         {
