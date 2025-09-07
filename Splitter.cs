@@ -260,7 +260,7 @@ namespace VideoSplitter
 
                 if (unitRangesIndex == unitRanges.Length - 1) percCovered += percPerSegment;
             }
-            throw new Exception("Something went wrong");
+            return percCovered - 1d / scaleIncrementCounts.Sum() * percPerSegment;
 
             int IncCount(int labelPosIndex, TimeSpan span)
             {
