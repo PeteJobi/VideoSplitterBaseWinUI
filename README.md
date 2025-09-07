@@ -44,8 +44,8 @@ Some things to note:
     The generic version. _T_ must be a class that extends **SplitRange**. Read more about **SplitRange** class in the [Classes](#classes) section.
 - **SplitSection()** <br>
   If there are no existing ranges, callling this method creates 2 ranges split at the current position of the video. Otherwise, if the playhead is within a range, the range is split into two at the video's current positon, else a range is created starting from the end time of the closest range whose end is before the video's current position, and the video's current position itself.
-- **void SplitIntervals(TimeSpan interval)** <br>
-  Creates as many _interval_-long ranges as can fit into the video and an additional range filling what's left over if any. This will clear any ranges that existed before the call.
+- **void SplitIntervals(TimeSpan interval, T? range = null)** <br>
+  If a range is not specified, this creates as many _interval_-long ranges as can fit into the video and an additional range filling what's left over if any. This will clear any ranges that existed before the call. If a range is specified, it does the same thing only for the duration of that range, and other ranges are left untouched.
 - **void JoinSections(params SplitRange[] ranges)** <br>
   Joins the ranges provided into one single range whose Start time corresponds with the Start time of the first specified range and End time corresponds to the End time of the last specified range.
 - **async Task PlaySection(TimeSpan start, TimeSpan end, CancellationToken cancellationToken = default)** <br>
