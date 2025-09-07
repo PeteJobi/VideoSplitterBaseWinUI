@@ -167,3 +167,5 @@ The library depends on Application Resources to allow for some customization of 
 
     newRange.SetStartAndEndAtOnce(Timespan.FromSeconds(30), Timespan.FromSeconds(35)); //When PropertyChanged event is called for Start and End, Start is 00:00:30 and End is 00:00:35
     ```
+
+You may check out [VideoSplitterPageWinUI](https://github.com/PeteJobi/VideoSplitterPageWinUI) to see a WinUI page that uses this library.
