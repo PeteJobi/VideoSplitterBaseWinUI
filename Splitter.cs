@@ -144,7 +144,8 @@ namespace VideoSplitter
             Canvas.SetTop(scenePreviewPanel, SpaceForLines);
             seeker.UpdateLayout(); //This sets the ActualWidth of seeker
             dragger.InitDraggerResizer(seeker, [Orientation.Horizontal], 
-                new HandlingParameters{ DontChangeZIndex = true, Boundary = Boundary.BoundedAtCenter}, new HandlingCallbacks{ Dragging = SeekerDragged });
+                new HandlingParameters{ DontChangeZIndex = true, Boundary = Boundary.BoundedAtCenter},
+                new HandlingCallbacks{ AfterDragging = r => SeekerDragged(r.Left, r.Width) });
             dragger.SetElementZIndex(seeker, 100);
         }
 
@@ -447,9 +448,9 @@ namespace VideoSplitter
             model.VideoProgress = prevVideoProgress = mediaPlayer.Position;
         }
 
-        private void SeekerDragged()
+        private void SeekerDragged(double left, double width)
         {
-            var distance = dragger.GetElementLeft(seeker) + seeker.ActualWidth / 2;
+            var distance = left + width / 2;
             model.VideoProgress = prevVideoProgress = mediaPlayer.PlaybackSession.Position = distance / progressCanvas.Width * duration;
         }
 
