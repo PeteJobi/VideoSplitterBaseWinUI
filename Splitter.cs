@@ -175,18 +175,23 @@ namespace VideoSplitter
             model.SplitRanges.Add(new T { Start = nearestEndBeforeMark, End = position });
         }
 
-        public void SplitIntervals(TimeSpan interval)
+        public void SplitIntervals(TimeSpan interval, T? range = null)
         {
-            model.SplitRanges.Clear();
-            var start = TimeSpan.Zero;
-            var end = interval;
-            while (end < duration)
+            var errorMargin = TimeSpan.FromMilliseconds(50); //margin of error to cater for floating point inaccuracies
+            var rangeDuration = range?.End - range?.Start ?? duration;
+            if (interval >= rangeDuration - errorMargin) return;
+            if (range == null) model.SplitRanges.Clear();
+            else model.SplitRanges.Remove(range);
+            var start = range?.Start ?? TimeSpan.Zero;
+            var end = start + interval;
+            var dur = range?.End ?? duration;
+            while (end < dur - errorMargin)
             {
                 model.SplitRanges.Add(new T{ Start = start, End = end });
                 start = end;
                 end += interval;
             }
-            model.SplitRanges.Add(new T { Start = start, End = duration });
+            model.SplitRanges.Add(new T { Start = start, End = dur });
         }
 
         public void JoinSections(params T[] ranges)
@@ -238,7 +243,6 @@ namespace VideoSplitter
             var segments = spans.Length / scaleIncrementCounts.Length;
             var percPerSegment = 1 / (double)segments * 100;
             var percCovered = 0d;
-            var cv = new List<(TimeSpan a, TimeSpan b)>();
             for (var i = 0; i < spans.Length; i++)
             {
                 var span = spans[i];
@@ -246,7 +250,6 @@ namespace VideoSplitter
                 var unitRange = unitRanges[unitRangesIndex];
                 var spanStart = span * unitRange.first;
                 var spanEnd = span * unitRange.last;
-                cv.Add((spanStart, spanEnd));
                 if (spanStart >= duration && spanEnd <= duration)
                 {
                     var incCount = IncCount(unitRangesIndex, spans[i]);
