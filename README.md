@@ -1,7 +1,8 @@
 # VideoSplitterBase
 This is a single-class WinUI 3 C# library that provides a video timeline interface for users to easily create ranges representing sections of video.
 
-![VideoSplitter 2025-07-30 18-54-28000_CROPPED](https://github.com/user-attachments/assets/92b30578-71d9-4040-9bb3-228ce2f7a6cb)
+<p align="center"><img alt="Video showing the Playhead moving across the timeline" src="https://github.com/user-attachments/assets/718c45d0-9290-46c2-892b-da2f7d3d4c4c" style="display: block; margin: 0 auto" /></p>
+
 
 # How to use
 This library depends on [DraggerResizerWinUI](https://github.com/PeteJobi/DraggerResizerWinUI). Include both libraries into your WinUI solution and reference both in your WinUI project. The below shows the minimum code required to use this library: <br>
