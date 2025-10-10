@@ -9,6 +9,6 @@
     <Import_RootNamespace>VideoSplitterBase</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="$(MSBuildThisFileDirectory)Splitter.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MediaSplitter.cs" />
   </ItemGroup>
 </Project>
